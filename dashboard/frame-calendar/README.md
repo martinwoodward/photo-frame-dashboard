@@ -5,6 +5,10 @@ the left 75%, and the real Home Assistant frontend on the right 25%. The calenda
 and panel share a dark Catppuccin-inspired palette. This is separate from Home HQ;
 installing it does not replace the existing kiosk, vendor apps or system WebView.
 
+![Frame Calendar on a 1366x768 frame: dark month calendar with event bars and next-three-month previews, next to a Home Assistant panel showing heating and weather](docs/screenshot.png)
+
+*Appointment titles are replaced with placeholder text for privacy.*
+
 ## Build
 
 Requires JDK 17 or 21 and Android SDK platform 35. The included Gradle 8.13 wrapper
