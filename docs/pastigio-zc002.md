@@ -63,7 +63,8 @@ was present but disabled; the key method did not require enabling it.
 
 The key file's ownership, mode and SELinux label were matched to that unit's
 existing userdata metadata. This finding has not been re-tested against stock
-boot on the Pastigio unit recorded here. The boot patch below is a historical
+boot on the first Pastigio unit recorded here; a [third Pastigio unit](#third-pastigio-unit)
+confirmed it with the guarded writer below. The boot patch below is a historical
 tested route, not evidence that those broader changes are required on this build.
 
 PR #73 also verified a full backup through the repository's existing read-only
@@ -387,6 +388,34 @@ capabilities, and the first unit's patched `adbd` may not have this limit.
 
 No HEVC or VP9 decoder. H.264 720p60 plays in hardware.
 
+## Third Pastigio unit
+
+From [#231](https://github.com/wesbos/photo-frame-dashboard/issues/231), macOS, repo at `f1e0820`.
+Same fingerprint as above. The partition starts follow the [SOMY ZC002](#somy-zc002-unit-identity)
+table, not the first Pastigio unit (`/data` at sector 4268032).
+
+- FEL from the FEL stub card, without opening the case.
+- Route U read-only U-Boot (v2025.10) with the base patch, the no-HS patch at 4-bit 26 MHz, START
+  STOP and the null console, CPU at 408 MHz, PMIC init kept. **Builds without PMIC init never
+  enumerated.** `build-uboot.sh` doesn't take extra patches, so a local copy was used.
+- UMS reads dropped within seconds on a port directly on the Mac, and were stable on a dock's USB
+  2.0 port. Only a USB-A to USB-C cable worked.
+- Full backup with `emmc-macos.py backup-resume`, then the
+  [guarded writer](#guarded-userdata-key-writer): 8 ranges, 7,680 bytes, with no Android boot
+  between the backup and the write. The ranges were checked over UMS before and after.
+- First boot: `device`. `su 0` has the same capability limit as the
+  [second unit](#su-0-from-adb-has-no-capabilities).
+- Home HQ works as Home with Frameo disabled (`pm disable-user`), and survived a reboot.
+
+Two gaps it found are now in the [guarded writer](#guarded-userdata-key-writer): the generated
+`write-data.cmd` and `restore-data.cmd` had no `nulldev` guard (this unit's build needed one; it
+was added by hand), now `data-patch-prepare.py --nulldev`; and `emmc-macos.py verify` can't check
+a data plan (a one-off read-only check was used), now `emmc-macos.py verify-data`.
+
+The U-Boot patch that needed `git apply --unidiff-zero` was START STOP
+(`pf1007l-v2025.10-start-stop.patch`, which has no context lines). The no-HS patch applies with a
+plain `git apply` after the base patch.
+
 ## What remains untested or unpublished
 
 - On the first Pastigio unit: the repository's complete PF1007L Route U / Route S, and
@@ -441,6 +470,11 @@ python3 -I scripts/a33-uboot/data-patch-prepare.py \
   data-partition-pristine.img data-partition-edited.img <data-partition-start-sector>
 ```
 
+To skip extracting `/data` (about 29 GB), edit an APFS clone (`cp -c`) of the whole backup with
+`debugfs -w 'clone.img?offset=<data start sector × 512>'`, then run `data-patch-prepare.py
+backups/a33-emmc-full.img clone.img 0`. Stop if any range it prints starts before the `/data`
+start sector ([#231](https://github.com/wesbos/photo-frame-dashboard/issues/231)).
+
 This only reads your two local images. It writes `diagnostics/a33-data-patch/`:
 the changed byte ranges (`range-NN.orig`/`.new`), `plan.json`, and
 `write-data.scr`/`restore-data.scr`. Re-derive your own plan from your own
@@ -456,6 +490,29 @@ your recorded bytes stops it with nothing written. Undo with `restore-data.scr` 
 same payloads. Restore also works after a write that stopped partway: ranges that already hold the
 original bytes are left alone, and it writes nothing if any range holds bytes this plan didn't make. Both scripts end in `ums 0 mmc 1`, so the eMMC is available
 read-only afterward for a whole-partition reread.
+
+The generator checks device selection and every read, including the fresh read immediately
+before each write. Failure cannot fall through using an old RAM buffer or a stale environment
+flag. Restore leaves already-original ranges untouched and stops before later ranges on any
+unexpected content or failed write/readback. Synthetic command-failure tests cover these paths;
+the revised control flow has not been tested on a frame.
+
+If your U-Boot was built with the null console (`CONFIG_SYS_DEVICE_NULLDEV=y` and an
+`ums-readonly.cmd` starting with `setenv stdin nulldev`, as this ZC002 unit needed), prepare with
+`data-patch-prepare.py --nulldev ...`. Both scripts then run only inside a successful
+`setenv stdin nulldev`, so floating serial input can't look like Ctrl-C and stop a script partway.
+If that command fails, they write nothing and wait. Leave the option out for a build without the null console.
+
+Check the ranges over the read-only UMS disk before the write (every range must say `original`)
+and after it (every range must say `new`):
+
+```sh
+sudo python3 -I scripts/a33-uboot/emmc-macos.py verify-data diskN <exact-bytes>
+```
+
+It reads only the planned sectors, checks the payload files against `plan.json`, and stops on a
+mix of new and original ranges or on bytes the plan didn't make. After `restore-data.scr`, every
+range must say `original` again.
 
 ## Offline helper for the historical boot patch
 

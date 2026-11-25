@@ -24,7 +24,7 @@ frame, which board it has, and where to start.
 
 ## Community builds
 
-30 people have shared their hacked frames in [Community builds](docs/community-builds.md): LCARS
+More than 70 people have shared their hacked frames in [Community builds](docs/community-builds.md): LCARS
 interfaces, retro weather channels, chess puzzles, Linux on a frame, family dashboards and more.
 
 <a href="docs/community-builds.md"><img src="docs/images/community/JesseWaites-11.jpg" height="90" alt="Star Trek LCARS interface" title="Star Trek LCARS interface"></a>
@@ -56,8 +56,14 @@ Settings → About before you follow any guide:
   then [app-analysis.md](docs/app-analysis.md) for the hidden menu. The manufacturer code is
   intentionally not published; the doc shows where the app checks it. Check Settings → About
   first: firmware `D156.V0.10` ships with ADB and `su` on ([skylight-d156.md](docs/skylight-d156.md)).
+  If `load-usb-reader.py` says the DDR helper doesn't match, stop and identify the firmware and
+  backup first. A different build or a wrong/corrupt backup can cause a mismatch; see
+  [skylight-150cal-ddr-v126.md](docs/skylight-150cal-ddr-v126.md).
 - **LOOFII C-3 21.5" calendar** (Allwinner A133, Android 10): root ADB over USB out of the box. See
   [allwinner-a133-loofii-c3.md](docs/allwinner-a133-loofii-c3.md); don't run the Rockchip or A33 scripts on it.
+- **Dromart MI86** (Frameo, firmware `wifi photo frame_20250822`, platform `rk312x`): the unit
+  tested never enumerated over USB. Root and network ADB came from an SD card. Start with
+  [dromart-mi86.md](docs/dromart-mi86.md), and match the fingerprint before using the card.
 - **Frameo, Dragon Touch, Joyhong, Uhale, VESWWE, Pastigio and others:** see the
   [device index](docs/devices.md).
 - **Something else:** work through the [phase map](#phase-map), create `docs/<device>.md`, and
@@ -70,6 +76,11 @@ web app deployed to Cloudflare Workers. `dashboard/kiosk/` is a small full-scree
 built without Gradle, that shows it. Hold two fingers still for 1.5 s to open a menu for the
 launcher, Android settings, and reloading. On frames without system navigation, optional floating
 **Back** and **Dashboard** buttons help; see the [kiosk guide](dashboard/kiosk/README.md).
+
+[`dashboard/frame-calendar/`](dashboard/frame-calendar) is a separate Android Home app
+with a dark monthly calendar on the left 75% and a live Home Assistant panel on the
+right 25%. It reads private Google/TripIt iCalendar feeds or existing Home Assistant
+calendar integrations; connections are configured privately on the frame.
 
 ## For agents: start here
 
@@ -158,11 +169,13 @@ trusting it, and remember that a past approval is not permission for a new write
 | **5. Root**                  | First check for a shipped `su` (`adb shell su -c id`). On Android 10+ user builds, try the debug-ramdisk route: [debug-ramdisk-research.md](docs/debug-ramdisk-research.md), `scripts/build-debug-boot.py`. Fastboot write failures: [ram-boot-research.md](docs/ram-boot-research.md).                                                                                                                                                                                                                                                                                                          |
 | **6. Make it useful**        | Launcher: [android-launcher.md](docs/android-launcher.md). Old Android (6.x) with a browser, WebView swap, CA roots, swap, nav bar and disabling vendor apps: [biuframe-setup-guide.md](docs/biuframe-setup-guide.md). Kiosk app and launcher database edits: [biuframe.md](docs/biuframe.md#custom-webview-kiosk-app-2026-09-30). A working example of a kiosk app and dashboard is in [`dashboard/`](dashboard). Build with `dashboard/kiosk/build.sh` (macOS/Linux) or `dashboard/kiosk/build.ps1` (Windows), change `DEFAULT_URL` in `MainActivity.java` to your own URL, and target the device's WebView version (see `dashboard/vite.config.js`). |
 | **7. Networking**            | USB reverse tethering with gnirehtet: [usb-internet-sharing.md](docs/usb-internet-sharing.md). An app that requires Wi-Fi specifically: [onboarding-network-gate.md](docs/onboarding-network-gate.md). Dead onboard Wi-Fi and a USB dongle: [usb-wifi-dongle.md](docs/usb-wifi-dongle.md).                                                                                                                                                                                                                                                                                                       |
-| **8. Vendor updates**        | Connecting the stock app to the internet can auto-install APK updates: [app-updates.md](docs/app-updates.md). Disable vendor updaters (FOTA etc.) before going online.                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **9. Security hand-off**     | Tell the owner what they now have: [biuframe-setup-guide.md](docs/biuframe-setup-guide.md#read-this-first).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **8. Vendor updates**        | Connecting the stock app to the internet can auto-install APK updates: [app-updates.md](docs/app-updates.md). Assess updater behavior before going online; some components are boot dependencies. Consult the matching device guide and follow the write/backup rules before changing anything.                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **9. Security hand-off**     | Record containment checks, remaining risks and rollback: [frame security](docs/security.md). See the [BIUFRAME limits](docs/biuframe-setup-guide.md#read-this-first) for that firmware.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Other docs
 
+- [Frame security](SECURITY.md): containment, reported firmware risks and security reporting
+- [Recovery catalog](docs/recovery/README.md): model/variant records, contribution template and backup prompt
 - Skylight Wi-Fi investigation: [live-diagnostics.md](docs/live-diagnostics.md),
   [native-wifi-root-tests.md](docs/native-wifi-root-tests.md),
   [wifi-firmware-candidate.md](docs/wifi-firmware-candidate.md),

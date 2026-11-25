@@ -234,3 +234,160 @@ read "free" all day, while weather and news (which involve no date) looked perfe
 `adb shell uptime` reporting **idle time longer than uptime** was the tell.
 
 Still untested on this unit: factory-reset behaviour, and firmware restore.
+
+## Follow-up, 2026-10-19: USB-C root ADB from Windows
+
+Second unit, same firmware string as the report above
+(`Modern10 charm_A33MAU_202605151735_4.0_V01`, fingerprint
+`joy/astar_ococci/astar-ococci:6.0.1/MOB30R/20260515:user/test-keys`, WebView
+`44.0.2403.119`). Host: Windows 11, build 26200, with Google platform-tools installed by winget.
+The identity checks matched before anything was installed.
+
+### USB-C enumerates
+
+The report above connected a USB-A port to a Mac with a USB-A-to-USB-C cable and saw no USB
+device. On this unit the owner plugged the USB-C connector into Windows, and the frame
+enumerated immediately. The case was not opened, so the host receptacle and the gadget
+receptacle were not identified separately.
+
+| Item | Observed |
+| --- | --- |
+| USB ID | `1f3a:1007` (Allwinner). Windows showed a USB composite device, an Android interface, and a WPD device named Modern10 charm |
+| `adb devices -l` | `device`, `product:astar_ococci`, `model:Modern10_charm`, at the same time as the Wi-Fi connection on port 5555 |
+| Shell | `uid=0(root)`, SELinux context `u:r:su:s0`, no authorization prompt |
+
+No `adb tcpip`, developer-menu change, or boot patch was used.
+
+A streamed BusyBox `dd` of `/dev/block/mmcblk0` moved about 7.1 MB/s over USB and about 0.9 MB/s
+over Wi-Fi. The Wi-Fi copy was stopped after a few percent and repeated over USB. The user area
+was 15,758,000,128 bytes, the same size as the unit above. Gzip readback matched the streamed
+SHA-256. Fresh reads matched boot0, boot1, the first 1 MiB of the user area, bootloader, env,
+boot, recovery (the partition device, and a seek to that range on `mmcblk0`), and a 16 MiB
+sample starting 128 MiB into system. None of the 240,448 blocks of 64 KiB in the user area were
+uniform `0xCC`. The whole-disk hash is not published.
+
+### Partition map from this unit
+
+`/sys/block/mmcblk0/mmcblk0p*/start` and `size` are 512-byte sectors. Names come from
+`/dev/block/by-name` on this unit. Another model's offsets are not a substitute.
+
+| Partition | Name | Start sector | Size, sectors |
+| --- | --- | ---: | ---: |
+| p3 | (no `by-name` link) | 1 | 2 |
+| p2 | bootloader | 73728 | 65536 |
+| p5 | env | 139264 | 32768 |
+| p6 | boot | 172032 | 32768 |
+| p7 | system | 204800 | 4194304 |
+| p8 | misc | 4399104 | 32768 |
+| p9 | recovery | 4431872 | 65536 |
+| p10 | cache | 4497408 | 1572864 |
+| p11 | metadata | 6070272 | 32768 |
+| p12 | private | 6103040 | 32768 |
+| p13 | frp | 6135808 | 1024 |
+| p14 | empty | 6136832 | 31744 |
+| p15 | alog | 6168576 | 163840 |
+| p16 | media_data | 6332416 | 32768 |
+| p1 | UDISK | 6365184 | 24412160 |
+
+`/proc/partitions` reports the user area as 15,386,672 one-kilobyte blocks. `mmcblk0boot0` and
+`mmcblk0boot1` are each 4,096 one-kilobyte blocks (4,194,304 bytes).
+
+boot1 was entirely zeros at that size, and a second full read matched. BusyBox on the device is
+v1.18.3. Stock toybox has no `sha256sum`. BusyBox `dd bs=1048576 skip=2164 count=32` read
+recovery from `mmcblk0` past 2 GiB and matched a read of `/dev/block/by-name/recovery`.
+
+### Windows `adb exec-out` and `dd`
+
+`adb exec-out busybox dd if=/dev/block/mmcblk0 bs=512 count=1` returned 543 bytes: the 512 data
+bytes plus `dd`'s status text. The local stderr pipe was empty, so the status arrived on the
+data stream. Redirecting on the device kept the stream exact:
+
+```sh
+adb exec-out sh -c 'busybox dd if=/dev/block/mmcblk0 bs=1048576 2>/dev/null'
+```
+
+A 65,536-byte read of `/dev/block/by-name/boot` contained 552 `0x0a` bytes and was still exactly
+65,536 bytes, so this Windows `adb` did not expand newlines. The first eight bytes were
+`ANDROID!`.
+
+### Clock
+
+About 28 minutes after boot, `uptime` reported idle time longer than uptime, the tell from the
+note above, while `date` already showed 19 October 2026. A jump of years was not seen in this
+session.
+
+Not tested here: whether USB ADB survives a reboot, factory reset, and firmware restore.
+
+## Follow-up, 2026-10-31: firmware `V03`, Wi-Fi root ADB from macOS
+
+Third unit, **newer firmware** than the units above. Host: Apple silicon MacBook Pro, macOS 26
+(Darwin 25.6.0), Google platform-tools 37.0.1 (the zip from `dl.google.com`; no Homebrew).
+
+| Item | Observed value |
+| --- | --- |
+| Firmware build | `Modern10 charm_A33MAU_26060810_4.0_V03` |
+| Build fingerprint | `joy/astar_ococci/astar-ococci:6.0.1/MOB30R/20260608:user/test-keys` |
+| VPhoto version (Settings → About) | `2.1.3.73` |
+| CPU ABI | `armeabi-v7a` |
+| ADB shell identity | `uid=0(root)`, SELinux context `u:r:su:s0` |
+| BusyBox | `/sbin/busybox` |
+
+### ADB: Wi-Fi only on this host
+
+- **Wi-Fi:** `adb connect <frame-ip>:5555` succeeded with no prompt; the shell was root. As on `V01`,
+  nothing had to be enabled first.
+- **USB-C to USB-C:** the frame's USB-C port to the Mac's USB-C port, with a cable that syncs a phone
+  on the same Mac, plugged in directly. `system_profiler SPUSBHostDataType` listed only the Mac's own
+  buses: no device, and no macOS "Allow accessory" prompt. A USB-A host (an adapter or hub) on the Mac
+  was not tried; the Windows report above may have used one.
+- **Frame's USB-A port:** with a USB-C-to-USB-A cable from the frame's USB-A port to the Mac, the
+  **Mac started charging from the frame**, which suggests the frame acts as USB host on that port. No
+  data path to the Mac was seen. Don't leave a laptop charging from it.
+- **Finding the IP:** the frame's Wi-Fi details dialog (Status, Signal strength, Link speed,
+  Security) shows no IP address. A ping sweep of the subnet, then `arp -a` filtered by the Wi-Fi MAC
+  from Settings → About, found it; the DHCP hostname was `android-<hex>`.
+
+### Vendor updater: no boot hook on this build
+
+`getprop persist.sys.start_ac` printed nothing, so the FOTA boot hook described in
+[joyhong-c2-a133.md](joyhong-c2-a133.md#the-vendor-fota-boot-hook-read-this-before-disabling-anything)
+does not appear to be present. `com.waophoto.fota` is `versionName=1.0` and lists
+`.MainActivity`, `.MessageService` and `com.blankj.utilcode.util.MessengerUtils$ServerService`.
+`pm list packages -3` was empty (VPhoto and the updater are system apps).
+
+Only the updater service was disabled, not the whole package:
+
+```sh
+adb shell pm disable com.waophoto.fota/.MessageService
+adb shell am force-stop com.waophoto.fota
+# undo: adb shell pm enable com.waophoto.fota/.MessageService
+```
+
+`dumpsys package com.waophoto.fota` then listed `MessageService` under `disabledComponents`. Whether
+this survives a reboot has not been tested yet.
+
+### Partial backup and partition sizes
+
+Not a full backup: only `bootloader`, `env`, `boot`, `recovery`, `misc`, `frp`, `mmcblk0boot0` and
+`mmcblk0boot1`, over Wi-Fi with `adb exec-out "busybox dd if=… bs=1048576 2>/dev/null"`. Each file's
+macOS `md5` matched an on-device `busybox md5sum` of the same block device, and the byte counts were
+33,554,432, 16,777,216, 16,777,216, 33,554,432, 16,777,216, 524,288, 4,194,304 and 4,194,304.
+Wi-Fi moved about 0.3 to 0.6 MB/s here, so a whole-disk copy over Wi-Fi was not attempted.
+
+The `by-name` links and every partition size in `/proc/partitions` match the 19 October table
+above (start sectors were not read on this unit). `/proc/partitions` lists `mmcblk0` as
+15,388,672 one-kilobyte blocks, which is exactly the 15,758,000,128-byte user area; the
+15,386,672 figure in the 19 October section looks like a typo.
+
+### Browser dashboard
+
+Rootless Pixel Launcher 3.9.1 and Firefox 143.0.4 ARMv7, the same pinned files and SHA-256
+values as the first report, installed with `adb install -r` over Wi-Fi (Firefox took about
+5.5 minutes to push). After choosing Rootless as Home (**Always**) and adding the hosted demo with
+Firefox's **Add to Home screen**, the dashboard opened full-screen, as on `V01`.
+
+There was no on-screen Back or Home control after leaving the dashboard for Settings (SystemUI's
+state was not checked). `adb shell input keyevent 3` returned to the launcher.
+
+Not tested on this unit: reboot persistence of network ADB and of the disabled updater service,
+the native kiosk, a USB-A host on the Mac, factory reset and restore.

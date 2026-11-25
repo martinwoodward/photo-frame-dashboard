@@ -35,6 +35,21 @@ if [ "$IGNORE_IPV6_RA" = 1 ]; then
     ip6tables -C $RA 2> /dev/null || ip6tables -I $RA
 fi
 
+# Optional best-effort filtering. Boot/network-service timing can leave exposure windows;
+# this is not a prerequisite for Wi-Fi, and a privileged app can replace these rules.
+if [ "$FIREWALL" = 1 ] && [ ! -e /data/local/frame-nofirewall ]; then
+    if [ -r /system/bin/frame-firewall.sh ]; then
+        . /system/bin/frame-firewall.sh
+        if frame_firewall; then
+            frame_firewall_monitor &
+        else
+            log -t frame-wifidefer "FIREWALL not applied; Wi-Fi startup continues, use router isolation"
+        fi
+    else
+        log -t frame-wifidefer "FIREWALL helper missing; no protection applied"
+    fi
+fi
+
 if [ -e /data/local/frame-nowifi ]; then
     log -t frame-wifidefer "frame-nowifi set; leaving Wi-Fi off"
     exit 0
@@ -49,13 +64,22 @@ fi
 
 # DHCP rejoin: on about 1 boot in 10 the access point sent a group-key update right after the
 # 4-way handshake, and the driver then dropped broadcast frames, so the first DHCP offer never
-# arrived (Android waits ~36 s for its DHCP timeout). A normal lease takes well under 1 s, so if
-# associated without an address for 2 s, drop and rejoin (about 4 s; "wpa_cli reassociate" was
-# slower because its first attempt failed). Gives up after 90 s.
+# arrived (Android waits ~36 s for its DHCP timeout). So if associated without an address, drop
+# and rejoin (about 4 s; "wpa_cli reassociate" was slower because its first attempt failed).
+# How long to wait first is the whole difficulty: association to address took well under 1 s on
+# the network of #50 but 5-7 s on another, where a 2 s wait cut every DHCP exchange short and the
+# address only arrived once this loop gave up: 148 and 165 s of uptime on two boots, against 51
+# and 52 s on the two after this change. 10 s is longer than any of those and still well inside
+# Android's own ~36 s DHCP timeout, so a stuck handshake is still caught. The number of rejoins is
+# capped for the same reason: if the wait is still too short on some network, the loop must stop
+# fighting DHCP rather than retry until it gives up. Gives up after 90 s.
 W="wpa_cli -p /data/misc/wifi/sockets -i wlan0"
+STUCK=10   # seconds associated with no address before rejoining
+REJOINS=3  # most rejoins per boot
 t=0
 stuck=0
 down=0
+rejoins=0
 while [ $t -lt 90 ]; do
     ip -4 addr show wlan0 2> /dev/null | grep -q inet && exit 0
     case "$($W status 2> /dev/null)" in
@@ -68,8 +92,9 @@ while [ $t -lt 90 ]; do
         down=$((down + 1))
         ;;
     esac
-    if [ $stuck -ge 2 ]; then
-        log -t frame-wifidefer "associated but no DHCP lease for 2 s; rejoining"
+    if [ $stuck -ge $STUCK ] && [ $rejoins -lt $REJOINS ]; then
+        rejoins=$((rejoins + 1))
+        log -t frame-wifidefer "associated, no address for ${STUCK}s; rejoin $rejoins/$REJOINS"
         $W disconnect > /dev/null
         sleep 0.3
         $W reconnect > /dev/null

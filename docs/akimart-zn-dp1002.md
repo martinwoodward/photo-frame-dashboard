@@ -71,6 +71,21 @@ Same partition names, order and NAND size as the [VESWWE DP100](veswwe-10.1.md),
 is 128 MiB rather than 64 MiB, which shifts every later partition by 131,072 sectors. Do not reuse
 the VESWWE offsets. `/system`, `/vendor` and `/oem` mount ext4 read-only; `/data` is ext4.
 
+## Other builds of this board
+
+Same SSA RK3326 board, different firmware. Match your fingerprint and boot hash before following
+any of these pages.
+
+| Sold as | Firmware | Stock WebView | `su` over `adb exec-out` | Partition map | Page |
+| --- | --- | --- | --- | --- | --- |
+| Akimart, Dxmart, moonka ZN-DP1002 10.1" | `SSA_Frame_20260420` | 106 | byte-clean | above | this page |
+| Dxmart 10.1" (Amazon.se) | `SSA_Frame_20260721` | 106 | byte-clean | same | [fourth unit](#fourth-unit-dxmart-ssa_frame_20260721-2026-11-10-macos): USB ADB lost at boot without Frameo |
+| Runxion 10.1" | `SSA_Frame_20250928` | 61 | byte-clean | same | [runxion-zn-dp1002-rk3326.md](runxion-zn-dp1002-rk3326.md) |
+| YENOCK ZN-DP1501 15.6" | `SSA_Frame_20250814` | 61 | adds CR | same | [yenock-zn-dp1501.md](yenock-zn-dp1501.md) |
+| SSA "Frame" 21.5" | `SSA_Frame_21inch-20260518` | 106 | adds CR | extra `fotocube`, later partitions shifted | [ssa-frame-21inch-rk3326.md](ssa-frame-21inch-rk3326.md) |
+| HY-S101 (`zyf`) | `HY-S101_Frameo_20260826` | 106 | byte-clean | same | [hy-s101-rk3326.md](hy-s101-rk3326.md) |
+| AMABOO GBZK-Y1000 10.1" / 15.6" | `RAM_S101_20251229` / `RAM_S101_15.6_20260314` | 106 | not recorded / adds CR | same | [amaboo-gbzk-y1000.md](amaboo-gbzk-y1000.md) |
+
 ## Verified firmware backup
 
 - Transport probe: a 4 KiB read of boot through `adb exec-out "su 0 dd ..."` arrived as exactly
@@ -120,17 +135,246 @@ after a normal reboot the frame came up on the dashboard (owner observation; net
 reconnected for that boot). Rootless Pixel Launcher stays reachable from the kiosk's two-finger
 hold → **Open launcher**, which skips the kiosk's own HOME entry.
 
+## Second unit: Dxmart ZN-DP1002 (2026-10-15, macOS)
+
+A second owner's frame, sold as **Dxmart** ZN-DP1002 10.1", has the same board. Host: macOS on
+Apple silicon, USB ADB only.
+
+- **Identity:** every field in the [identity table](#identity-from-adb) matched, including the
+  fingerprint, `SSA_Frame_20260420`, the NAND size and the 128 MiB recovery.
+- **Firmware:** the 32 MiB boot partition SHA-256 is the same `4ed777af…891b` as above.
+- **Frameo:** v1.30.13, still the copy in `/system/priv-app`; it had not updated itself into
+  `/data/app` yet.
+- **Cables:** a USB-A to USB-C path through a hub gave power and data. USB-C to USB-C straight
+  into the Mac gave neither.
+- **Root:** `adb root` works (adbd runs as `u:r:su:s0`), and `su 0 <cmd>` works too.
+- **Backup:** the same `adb exec-out "su 0 dd"` method over USB ran at about 11.5 MiB/s, about
+  6 minutes for the 3.4 GB capture, checks included. Every check passed: chunk lengths, gzip
+  readback, no `0xCC` blocks and on-device SHA-256 of all 16 regions.
+- **Wi-Fi with the screen off:** the driver rejects scheduled scans (`wificond:
+  NL80211_CMD_START_SCHED_SCAN failed`). With the screen asleep, Wi-Fi was enabled but stayed
+  disconnected. `input keyevent KEYCODE_WAKEUP` brought the connection back within seconds. Prefer
+  low brightness to sleeping the screen if the dashboard must stay online.
+- **Screen turning off:** while Frameo was enabled, its sleep schedule
+  (`net.frameo.frame/.feature.sleep_schedule.AScreenOffOverlay`) put the screen to sleep, even
+  over the kiosk. This stopped once Frameo was disabled.
+- **Kiosk as HOME without a rebuild:** the current kiosk has a `.Home` alias.
+  `am start -n com.wesbos.homehq/.MainActivity --ez home true`, then
+  `cmd package set-home-activity --user 0 com.wesbos.homehq/.Home`, made it HOME. ActivityManager
+  reported the activity displayed after 5.3 s. The screen was asleep then; when it was woken about
+  a minute later, the page had rendered.
+- **Navigation:** the kiosk's own **Home HQ navigation** accessibility service gave the Back and
+  Dashboard buttons. The owner enabled it on the panel and went to Settings → Apps and back before
+  Frameo was disabled. Frame Home was not installed. The two-finger hold works, but only with
+  both fingers completely still. The first few tries failed.
+- **Pitfall, Frameo came back:** `pm disable-user` read back `enabled=3`, but after an
+  `adb reboot` within about 20 seconds Frameo was `enabled=0` and running again. In
+  `/data/system/users/0/package-restrictions.xml` its entry had no `enabled` attribute, while the
+  updaters disabled earlier kept `enabled="3"`. The second try worked: disable, wait 30 s, check
+  the file, `sync`, then `adb reboot`. Before you reboot, check the file:
+  `adb shell "su 0 grep 'net.frameo.frame' /data/system/users/0/package-restrictions.xml"` must
+  show `enabled="3"`. `svc power reboot` from the shell did nothing on this unit.
+- **After a normal reboot:** Frameo and both updaters stayed `enabled=3` with no process. The
+  kiosk was HOME and focused, the navigation service stayed on, and USB ADB stayed on. No TCP port
+  was listening. The only outbound connections were the kiosk and Gboard
+  (`com.google.android.inputmethod.latin`, to a Google address).
+- **Hardware seen:** touchscreen `gslX680-d708`, accelerometer `sc7a30`, and a PIR motion
+  sensor. The kernel log prints `pir_gpio_status`.
+- **Boot animation:** `/system/media/bootanimation.zip` holds four PNG parts at 870×432 on
+  white. `/oem` is a separate ext4 partition with no `media/` folder. `/system` mounts straight
+  from `rknand0p11`, with no dm-verity device, although `ro.boot.veritymode` reads `enforcing`.
+
+### Another Dxmart unit (2026-10-22, Windows)
+
+Reported by @TakalNL in [#233](https://github.com/wesbos/photo-frame-dashboard/pull/233), bought from
+[Amazon.nl B0DNMGKW2H](https://www.amazon.nl/dp/B0DNMGKW2H). Same firmware, fingerprint, partition
+map and boot hash. A 64 MiB read stalled 832 MiB into `system`. Reading the rest in 8 MiB chunks with
+a 100 ms pause finished it, and all 16 regions matched independent device reads. Platform-Tools
+37.0.1 on a rear motherboard USB port worked; earlier attempts through a front case port and a hub
+were unreliable. The causes were not isolated.
+
+#### Sleep and touch-responsive night view (2026-10-26–27)
+
+Further observations on that Windows owner's unit, with the same firmware and shipped
+`gslX680-d708` touchscreen. These are one-unit results, not a generic sleep/wake procedure.
+
+- **True sleep did not wake on touch.** After Frameo was disabled, the owner tried touch and
+  double-tap; neither woke the display. A short press of the rear power button did. Automatic
+  alarm-driven wake also worked, but does not establish touch-to-wake support.
+- **Scheduling without Frameo worked.** A separate local native companion used Android RTC wake
+  alarms and the board's shipped `su 0` with fixed sleep/wake key events. Short automatic trials
+  passed before and after disabling Frameo. An already-armed wake alarm also started a new
+  companion process after only its verified idle process had been terminated during sleep;
+  this was not Android's package force-stop, which cancels alarms. Boot and clock-change
+  receivers restored the schedule after a normal reboot without manually opening the companion.
+- **A native black view kept touch available.** A locally modified Home HQ kept the display
+  awake at minimum per-window brightness, hid its floating navigation controls and paused its
+  WebView timers. Actual backlight changed from 179 to 20 while stored daytime brightness stayed
+  179. Leaving that window restored actual brightness to 179 and WebView timers resumed. The
+  owner confirmed that one tap returned to the dashboard. This is a dim, awake screen, not true
+  sleep; faint backlight glow remained and was accepted. These values are this unit's backlight
+  readings, not percentages or measurements of electrical power.
+- **Overnight evidence is limited but positive.** For the first scheduled dim/return cycle on
+  2026-10-27, the companion journal recorded both commands succeeding and Android alarm statistics
+  independently recorded both deliveries. A later read found the dashboard foreground at normal
+  brightness with uptime spanning both actions. The display was not continuously observed
+  overnight. This does not prove an overnight true-sleep/Doze cycle.
+- **Recovery was checked by hand.** Home HQ stayed the default Home app, Frameo and both vendor
+  updaters stayed disabled after reboot, and their APKs/data were retained. The owner verified the
+  fallback launcher, Android Settings → installed apps, and floating Dashboard return.
+
+The companion and modified kiosk above were local builds; this report does not add their source
+or claim that the stock kiosk has these features. No kernel, touchscreen-driver or firmware
+partition changes were needed. Actual power consumption, cold power loss and a full weekend
+schedule remain unverified. To undo the local schedule, restore Frameo's recorded package state
+and open it to re-register its own schedule before disabling the replacement scheduler; keep a
+working Home/Settings route throughout.
+
+## Third unit: moonka ZN-DP1002 (2026-10-22, Linux)
+
+A third owner's frame, from Amazon US, with Frameo's About screen reading **`moonka ZN-DP1002`**.
+Host: Ubuntu, USB ADB only, USB-A to USB-C data cable.
+
+- **Identity:** the fingerprint, `SSA_Frame_20260420`, USB ID `2207:0006`, the partition map
+  (sector for sector, including the 128 MiB recovery) and the 32 MiB boot partition SHA-256
+  `4ed777af…891b` all match the units above. No `/system/bin/iotv` (the hidden agent on the
+  [Runxion RK3126](runxion-zn-dp1002-rk3126.md#hidden-root-agent-iotv)).
+- **Frameo updated itself to a test build.** About showed v1.30.13, but `dumpsys package` listed
+  `v1.32.16_-_OTA_test` in `/data/app`, installed at 17:27 the evening before, one minute after
+  About's "Last check for update" time. The frame had been online for setup only. The `/system`
+  copy was still v1.30.13.
+- **ADB on Linux:** Frameo → About → Beta Program → ADB access. At first `adb devices` showed
+  `unauthorized`. Toggling ADB access with the cable in re-enumerated the device, and adb then
+  reported `no permissions` because the host had no udev rule for `2207`, so the key was never
+  offered and the prompt that was accepted did nothing. After adding
+  `SUBSYSTEM=="usb", ATTR{idVendor}=="2207", MODE="0660", GROUP="plugdev"` to
+  `/etc/udev/rules.d/` and toggling again, the prompt authorized the host. Port 5555 stayed
+  closed.
+- **Root:** `su 0 <cmd>` gives `uid=0`, no prompt.
+- **Backup stall:** a single `adb exec-out "su 0 dd …"` of the whole 1.9 GiB `system` partition
+  stopped after about 130 MiB and never resumed; the on-device `dd` sat in `S` state. Reading it
+  in 64 MiB chunks, each checked against an on-device SHA-256, completed; all 16 regions then
+  matched as in the [backup section](#verified-firmware-backup). No `0xCC` blocks.
+- **Home Assistant in the kiosk:** with Home HQ's saved URL set to a local Home Assistant, the
+  page loads Home Assistant's `frontend_es5` build. Its index only serves the modern build to
+  Chrome 130 and newer, and WebView 106 is older. The login page and dashboards render. With
+  **Keep me logged in**, the session survived a reboot.
+- **`.local` names don't resolve:** `homeassistant.local` returned `unknown host` on the frame
+  (Android 8.1 has no mDNS in its resolver). The router's DNS name (`homeassistant.lan` here) or
+  an IP address works.
+- **First load failed offline:** the first load after install got `ERR_INTERNET_DISCONNECTED`
+  on every request while Wi-Fi briefly dropped, and Home Assistant showed "Could not load Home
+  Assistant". A reload worked.
+- **Navigation service over ADB:** after `pm grant com.wesbos.homehq
+  android.permission.WRITE_SECURE_SETTINGS`, `settings put secure enabled_accessibility_services
+  com.wesbos.homehq/com.wesbos.homehq.NavigationService` and `settings put secure
+  accessibility_enabled 1` bound the service. The owner then checked by hand on the panel:
+  two-finger menu → Android settings → Apps → **Back** → **Dashboard**.
+- **Disabling Frameo stuck the first time,** following the second unit's pitfall: disable, wait
+  30 s, check that `package-restrictions.xml` shows `enabled="3"`, `sync`, then `adb reboot`.
+  After the reboot, the kiosk `.Home` was resumed, Frameo and both updaters were `enabled=3` with
+  no process, the navigation service was bound and Wi-Fi was connected.
+
+## Fourth unit: Dxmart, `SSA_Frame_20260721` (2026-11-10, macOS)
+
+A fourth owner's frame, sold as **Dxmart** 10.1" Frameo, 32 GB, from
+[Amazon.se B0DNMGKW2H](https://www.amazon.se/dp/B0DNMGKW2H), the same listing number as the
+[Windows Dxmart unit](#another-dxmart-unit-2026-10-22-windows). It runs newer firmware than the
+units above. Host: macOS on Apple silicon, USB ADB only, through a USB-A to USB-C data cable in the
+USB-A port of Apple's USB-C Digital AV Multiport Adapter.
+
+**On this firmware, USB ADB can be gone after a boot once Frameo is disabled.** Before you
+disable Frameo, run `adb shell grep -n usb.config /vendor/build.prop`. If it shows the garbled
+line described below, apply the `persist.sys.usb.config` fix first.
+
+- **Identity:** `ro.build.display.id` is `SSA_Frame_20260721` and the fingerprint is
+  `rockchip/rk3326_go/rk3326_go:8.1.0/OC/031508:user/release-keys`. Every other field that was
+  read matched the [identity table](#identity-from-adb): model, brand and manufacturer, platform
+  and board, Android 8.1 / API 27, the 2020-06-05 patch, kernel 4.4.138, RAM, 1280×800 at 160 dpi,
+  `ro.debuggable=1`, `ro.adb.secure=1`, SELinux permissive, `su 0 <cmd>` as root, and WebView
+  106.0.5249.126 in `/system/app/webview`. CPU, ABI and verified-boot state were not read.
+- **Firmware:** the partition map matched sector for sector (p1–p16, including the 128 MiB
+  recovery), and the 32 MiB boot partition SHA-256 is the same `4ed777af…891b` as above. No
+  `/system/bin/iotv` or `run_iotv.sh`, no init `.rc` file mentions it and no such process.
+- **Frameo updated itself within minutes:** the `/system/priv-app` copy is v1.31.18. Minutes
+  after the frame first went online, v1.32.18 was installed in `/data/app`. Frameo listened on
+  TCP 33324 on all interfaces. The frame shipped with time zone `America/Los_Angeles` and
+  automatic time zone off.
+- **Cables:** USB-C to USB-C gave no power and no data, as on the second unit. Through the
+  adapter, the frame did not show up on the first try; it enumerated after the owner reseated the
+  cable or toggled ADB access.
+- **USB ADB lost at boot (firmware bug):** line 80 of `/vendor/build.prop` reads
+  `persist.sys.usb.config=testing.mediascanner.skiplist=/mnt/shell/emulated/Android/`. At boot,
+  UsbDeviceManager tries that value as the USB configuration, init has no such configuration, the
+  USB state stays `none` and adbd is stopped. The Mac saw no USB device at all. This first showed
+  at the reboot after Frameo and the updaters were disabled; the frame had not been rebooted
+  before that, so whether Frameo hides the bug at boot was not tested.
+  - Turning USB debugging off and on, in Developer options (unlocked on the panel) or with
+    Frameo's ADB access switch, makes UsbDeviceManager retry, and its failsafe falls back to plain
+    `adb`. ADB then works until the next boot, not after it.
+  - Before the fix, `/data/property` held
+    `testing.mediascanner.skiplist=/mnt/shell/emulated/Android/,adb`, still not a valid
+    configuration.
+  - **Fix:** `adb shell su 0 setprop persist.sys.usb.config adb`. The value is stored in
+    `/data/property` and overrides `/vendor/build.prop`; `/vendor` is not touched. After an
+    untouched `adb reboot`, USB ADB was back within about 10 s, `sys.usb.config` read `adb` and
+    UsbDeviceManager logged no failures.
+  - **Undo:** set the previous value again
+    (`su 0 setprop persist.sys.usb.config 'testing.mediascanner.skiplist=/mnt/shell/emulated/Android/,adb'`),
+    or delete `/data/property/persist.sys.usb.config` and reboot. Either way USB ADB is lost at
+    boot again.
+- **FOTA restart loop:** `com.adups.fota` is a `PERSISTENT` app. After `pm disable-user`, Android
+  8.1 still started it; it crashed with `No such service` for its `SystemActionService` and was
+  started again about every 3 s: 122 restarts in the first 6 minutes after the reboot. The
+  [iQual RK3326 page](iqual-10x1-rk3326.md#open-questions) records the same crash. `su 0 pm hide
+  com.adups.fota` stopped it: after another reboot, `hidden=true`, `enabled=3`, no process and no
+  restarts. Undo: `su 0 pm unhide com.adups.fota`. APK and data are kept.
+- **Factory ADB key:** `/data/misc/adb/adb_keys` shipped with one key from a factory host. A
+  leading comma makes it invalid base64, so adbd rejects it. The Mac's key was added below it
+  through the normal prompt. To see what yours ships with:
+  `adb shell su 0 cat /data/misc/adb/adb_keys`; the comment at the end of each line names the
+  host.
+- **Backup:** the same `adb exec-out "su 0 dd"` method in 64 MiB chunks over USB took 343 s
+  (about 9.5 MiB/s on average), with no stalls. Every check passed: chunk lengths, gzip readback,
+  no `0xCC` blocks and on-device SHA-256 of all 16 regions. About 687 MiB compressed.
+- **Setup:** as on the second unit. Home HQ kiosk 1.2 became HOME through the `.Home` alias,
+  `WRITE_SECURE_SETTINGS` was granted, and the owner turned on the navigation service on the panel.
+  Frameo and both updaters were disabled with the wait 30 s, check, `sync`, `adb reboot` sequence,
+  which held the first time. After the two fixes above and an untouched reboot: the kiosk was HOME
+  and resumed, the navigation service was bound, Frameo and both updaters were `enabled=3` with no
+  process, no TCP port was listening, and only the kiosk and Gboard connected out.
+
+### A second `SSA_Frame_20260721` unit (Akimart, 2026-11-15, macOS)
+
+[Amazon India B0FB929WRN](https://www.amazon.in/dp/B0FB929WRN), reported in the [#303 discussion](https://github.com/wesbos/photo-frame-dashboard/pull/303): same identity, partition map and 32 MiB boot hash as the fourth unit, and the same garbled `/vendor/build.prop` line. After one untouched reboot with Frameo disabled, UsbDeviceManager's failsafe fell back to plain `adb` about 38 s after boot, so ADB survived that boot. The `persist.sys.usb.config=adb` fix then gave a clean boot with no failsafe fallback. The FOTA restart loop (62 crashes in 4 minutes) and the `pm hide com.adups.fota` fix were both confirmed. `adb_keys` held the same invalid factory key. So `SSA_Frame_20260721` does not always lose USB ADB at boot; set `persist.sys.usb.config` first to be safe.
+
 ## Guesses, not confirmed
 
+- Android probably writes `package-restrictions.xml` a few seconds after `pm disable-user`, and
+  `adb reboot` does not wait for that write. That would explain the lost Frameo state above.
+- AOSP 8.1 looks for `/oem/media/bootanimation.zip` before the `/system` one. Placing a custom
+  animation there would then replace the boot graphic without editing `/system`. Not tried.
+- The PIR sensor probably wakes the screen for Frameo's motion feature;
+  which Android component reads it is not checked.
 - The board is probably the same SSA RK3326 frame as the Runxion 10.1" in
   [PR #58](https://github.com/wesbos/photo-frame-dashboard/pull/58), which also uses `su 0 <cmd>`.
+  Since confirmed on one Runxion unit (older firmware, same partition map):
+  [runxion-zn-dp1002-rk3326.md](runxion-zn-dp1002-rk3326.md).
 - The USB-C port probably lacks the CC pull-down resistors a USB-C host needs before supplying
   power, which would explain a USB-C to USB-C cable doing nothing.
 - The Akimart listing likely ships more than one board, as other listings in the
   [device index](devices.md) do.
+- The `SSA_Frame_20260420` units probably don't have the garbled `/vendor/build.prop` line: the
+  second unit kept USB ADB after a reboot with Frameo disabled. Its `/vendor/build.prop` was not
+  read.
+- The boot partition is identical across both firmware versions, so `SSA_Frame_20260721`
+  probably changes only `/system`, `/vendor` or `/oem`. No per-partition hashes from the earlier
+  units are published to compare.
 
 ## Not yet checked
 
-- `adb root`, which should work given `ro.debuggable=1`; not needed so far.
 - Other factory apps' network behaviour. Keep the frame on an isolated network: Android 8.1 with
   a 2020 security patch and shipped root.
+- Whether a disabled `com.adups.fota` also restarts in a loop on `SSA_Frame_20260420`. The first
+  unit showed no FOTA process after its reboot, but a single read can miss a 3 s loop.
+- Whether `adb_keys` on `SSA_Frame_20260420` units ships with a factory key.

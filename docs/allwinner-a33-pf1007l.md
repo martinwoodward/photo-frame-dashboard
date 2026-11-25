@@ -14,6 +14,8 @@ not enable ADB or root.** Two later routes use published tools instead:
 [root ADB over Wi-Fi from an SD card](allwinner-a33-sdcard-adb-wifi.md) without USB.
 To choose a route and test your unit first, see [pf1007l-start-here.md](pf1007l-start-here.md).
 
+If USB data is present but `adb devices` is empty, try [ADB with no additional tools required](#adb-with-no-additional-tools-required) before FEL or an SD card. That path needs a data cable and `adb` only.
+
 **Security:** the AiMOR app runs root shell commands from a vendor server over an
 unencrypted connection. Read [aimor-remote-root-shell.md](aimor-remote-root-shell.md)
 before you connect the frame to your network.
@@ -94,11 +96,108 @@ USB device and refuses multiple USB targets. If ADB is already available, verify
 the properties in section 3 and skip FEL. If it says `unauthorized`, accept the
 debugging prompt on the frame; that state is different from no ADB interface.
 
+## ADB with no additional tools required
+
+Do this before FEL, an SD card, a boot patch, or putting the frame on the network.
+The stock image already contains the ADB switch. The earlier note that the Test App
+password dialog was not a usable route stopped because the password was not known.
+It did not show the dialog rejecting this password.
+
+Reported from one PF1007L in [#135](https://github.com/wesbos/photo-frame-dashboard/issues/135):
+About firmware ending `20260529`, Android 6.0.1 `eng`/`test-keys`, AiMOR 6.0.78, Windows host.
+The frame was not on Wi-Fi. No card was in the TF slot. Nothing was written to the boot partition.
+A later comment on that issue confirmed the same About path on a PF1007 and a PF1506.
+The same route also worked on a [May `20260519` unit](pf1007l-aimor-20260519-macos-root-report.md)
+(#272) and on one [January `20260113` unit](pf1007l-20260113-test-app-password-report.md).
+This does not establish the password on every firmware.
+Another May `20260529` report on the issue, from macOS, used the same steps. After the switch
+that host saw `1f3a:1002` rather than `1f3a:1009`. Treat the USB id as a clue, and treat
+`adb devices` plus a root shell as the pass condition.
+
+You need:
+
+- a USB-A to USB-C **data** cable
+- `adb` on the computer
+
+You do not need an SD card, a FEL stub, U-Boot, a boot-image patch, a network
+connection, or the vendor shell on TCP 7806.
+
+### 1. See that ADB is not up yet
+
+Boot the frame to the AiMOR screen and plug in the data cable.
+
+```sh
+adb devices -l
+```
+
+On the Windows report the host saw USB `1f3a:1008` (PTP) and `adb devices` printed no device.
+The macOS report on the same issue saw stock `1f3a:1000` ("Android") and an empty `adb devices`
+list. Either result is the starting point, not a reason to open the frame or write a card.
+
+### 2. Open the test app from About
+
+1. Open **About**.
+2. Tap **Model Number** until the dialog titled **Open test app** appears. The prompt is **Please enter password**.
+3. Enter `YHK88888888`.
+
+That opens `com.DeviceTest` / `com.DeviceTest.FirstRun`.
+
+### 3. Turn the ADB switch on
+
+On that screen, tap the control that reads **IS CLOSED**. It changes to **is open**.
+Leave it on **is open**.
+
+Unplug and replug the data cable if the computer does not re-enumerate.
+
+```sh
+adb devices -l
+adb shell id
+adb shell getprop persist.sys.usb.config
+adb shell settings get global adb_enabled
+```
+
+**Pass:**
+
+| Check | Result on the Windows report in #135 |
+| --- | --- |
+| USB id | `1f3a:1009` (PTP + ADB). The macOS report on #135 saw `1f3a:1002` instead |
+| `adb devices` | the frame listed as `device` |
+| `adb shell id` | `uid=0(root)` |
+| `persist.sys.usb.config` | `mass_storage,adb` |
+| `adb_enabled` | `1` |
+
+Reboot from the panel, or with `adb reboot`, and run the same commands again.
+On that unit they were unchanged, including after a power cut in the macOS report.
+ADB is then persistent. Skip the SD-card section and continue with the identity checks,
+verified backup and T8 lock-down in the [start-here guide](pf1007l-start-here.md). The tested
+hosts obtained root USB ADB without an authorization prompt; rejection of a fresh host key
+was not recorded. To deliberately undo this access, return the
+test-app switch to **IS CLOSED**; that removes ADB, so keep another verified way in first.
+
+**Fail:** the dialog rejects the password, or USB never exposes ADB after **is open**.
+Continue at [T3b](pf1007l-start-here.md#t3b-network-adb-test), then T3c. Use Route U or S
+only if those gentler routes fail.
+
+### Where the password is
+
+`YHK88888888` is not in `DeviceTest.apk`. On the unit in #135 it is the string compared by
+`com.yhk.rabbit.settingslibrary.fragment.AboutFragment.showCheckOpenTestPwdDialog`
+in `launcher_aimor.odex`. A match starts DeviceTest. The APK SHA-256 is the same
+6.0.78 hash already published in
+[aimor-remote-root-shell.md](aimor-remote-root-shell.md):
+
+`abc4e274940e21729de7b9dbaf1f7969efdf427955d0c4881a319611942fb65d`
+
+A matching APK does not prove every unit's odex is byte-identical. The panel accepted
+the password, and the **is open** switch is what made `adbd` appear.
+
+An empty `license.properties` file on a FAT card can also open the manufacturer
+tools. That still needs a card. This section does not.
+
 ## 2. Use an SD card for stable FEL, if ADB is absent
 
 The recessed Reset button exposed `1f3a:efe8` for about three seconds during
-startup, but version queries failed. The Android recovery menu, Test App password
-dialog and keyboard-settings detour did not provide a usable ADB route. A USB
+startup, but version queries failed. The Android recovery menu and keyboard-settings detour did not provide a usable ADB route. The Test App password dialog does. The password was not known when this page was written. See [ADB with no additional tools required](#adb-with-no-additional-tools-required). A USB
 identity alone is not proof that the Boot ROM protocol is responding.
 
 A spare SD card containing the official FEL boot stub gave **persistent,
@@ -286,7 +385,9 @@ in these commands prevents a `dd` status footer from contaminating the image.
 
 To read the whole eMMC in chunks (`/dev/block/mmcblk0` with `skip=`), use
 `/sbin/busybox dd`. The stock `dd` returned **0 bytes, with no error**, for every chunk
-that starts at 2 GiB or later (firmware 20260529, observed). `busybox dd` read those
+that starts at 2 GiB or later (firmware 20260529, observed; also `20260416`, #190, and
+January `20260113`, one unit with the larger eMMC, where the failure began exactly at the
+2,147,483,648-byte boundary of a 512 MiB chunking). `busybox dd` read those
 chunks, and gave the same bytes as the stock `dd` below 2 GiB. Check each chunk's size,
 not only its hash: an empty chunk has the same MD5 on the frame and on the host.
 
@@ -730,11 +831,11 @@ advertised interfaces:
 | Interface | Observed | Unverified |
 | --- | --- | --- |
 | SC7A20 accelerometer | Live XYZ samples; `sc7a20` at I2C `1-0019`. Physical portrait/landscape rotation worked with `SCREEN_ORIENTATION_FULL_SENSOR`. | Calibration and accuracy. |
-| LTR-C216R-14 light | SensorService sends values 63–64 to AutomaticBrightnessController. | Response to changing light; physical part identity. |
+| LTR-C216R-14 light | The sensor sits behind the hole in the front bezel: a finger over it takes the value to 0 in under a second, and lifting it restores the reading (`20260519` unit, 4 Hz trace of `/dev/input/event3`). A phone torch aimed at it from every angle never pushed it past 63, so 63–64 is the top of the scale, not a lux figure. AutomaticBrightnessController does apply it (`mAppliedAutoBrightness=true`, curve 0 → 4 %, 59 → 100 %), as #156 expected. Android smooths the input, so the panel dims a few seconds after the sensor does and not at all if the light keeps changing; both seen by hand on the panel. | Physical part identity; what the value means below saturation. |
 | AW. ambient temperature | Type 13 advertised; no samples or active client. | A working ambient sensor. |
 | SoC thermal | `sunxi-therm` reports raw 43 in thermal and hwmon nodes. | Scaling and calibration; distinct from ambient temperature. |
 | Silead touch | `gslX680new` at I2C `0-0040`; multitouch advertised. Taps and swipes worked. | Reliable close two-finger gestures. |
-| Audio | `SUNXI-CODEC` exposes playback/capture; speaker playback works. | Fitted microphone or working capture. |
+| Audio | `SUNXI-CODEC` exposes playback/capture; speaker playback works. On a `20260519` unit a speaker tone did not reach capture on any codec path ([report](pf1007l-aimor-20260519-windows-adb-on-report.md#microphone)). | A fitted microphone. |
 | Camera | Camera HAL present; camera service reports zero devices. | Physical inspection. |
 | Bluetooth | Feature flags present; no sysfs/rfkill controller, Bluetooth app or connected framework service. | Working Android stack or fitted radio; Linux BLE support is reported below on a different unit (the Omarchy SD build). |
 | Power | USB online. Battery node reports present/charging with zero voltage/capacity. Reconnecting USB power caused a cold boot. | A usable battery. |

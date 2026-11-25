@@ -1,5 +1,11 @@
 # SI006 Uhale frame access notes
 
+**Security update:** [issue #279](sammix-aw105-uhale.md) reports a SystemUI malware loader on
+three Sammix AW105 units with the same `si006asb` product but different firmware. This guide's
+disabled-app list includes the same payload package names. Disabling them does not establish
+that their source is removed. This SI006 build has not been checked for that loader; keep a
+suspected frame isolated and use the report's read-only checks. Do not disable SystemUI.
+
 One 10.1-inch Uhale frame tested on Linux on 2026-10-11. **Root USB ADB, a verified
 firmware backup, WebView 106, and the repo's dashboard are working.** Our locally
 modified kiosk boots into Home HQ, and USB ADB reconnects without an SD card or
@@ -8,6 +14,15 @@ another RSA prompt. This is a record of this unit, not a universal SI006 setup s
 This frame uses Spreadtrum hardware. The
 [PF1007L start guide](pf1007l-start-here.md) is for Allwinner A33 hardware; its FEL,
 U-Boot, partition offsets, and boot patches do not apply to this unit.
+
+For model `HSB`, firmware `F10_V1.01_20260826_195506`, see the separate
+[HSB / F10 report](uhale-hsb-f10.md). That unit's hidden tap menus did not open;
+USB keyboard input provided browser access before ADB. Its partition layout,
+WebView and ADB authorization behavior differ from the SI006 described here.
+
+The [VTimes VT01001](vtimes-vt01001.md) calendar is the same `si006asb` product under another
+brand. This guide's WebView overlay and CA roots worked on it unchanged; the way in was the HSB / F10
+USB keyboard route.
 
 ## Confirmed identity
 
@@ -249,6 +264,10 @@ com.mobile.applock.xk3
 ```
 
 For these previously enabled packages, undo is `adb -d shell pm enable PACKAGE`.
+This list records package state, not malware removal. In particular, the three `xk` packages
+also appear in the [Sammix SystemUI-loader report](sammix-aw105-uhale.md); on that firmware,
+SystemUI could install payloads independently of the vendor photo app. Re-enabling a suspected
+payload is not a recommended recovery step. Preserve evidence and containment first.
 Do not disable shared Android services merely because they have a vendor-looking
 name. Core Settings, SystemUI, networking, media, and storage services remain enabled.
 

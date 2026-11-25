@@ -3,6 +3,9 @@
 Comments go out under the owner's GitHub account. Keep them short, specific and kind. Say what
 happened, why, and what would be welcome next. Never quote private data back.
 
+Append the required bot-comment footer from [the skill](../SKILL.md#6-comment-and-close) to
+every template below, including short replies and closure comments.
+
 ## Merged with changes
 
 > Merged, thanks! One change after merging: [what changed], because [why, in one sentence].
@@ -20,8 +23,11 @@ happened, why, and what would be welcome next. Never quote private data back.
 
 ## Changes requested (left open)
 
-> Thanks, this is valuable: [what's good]. Before we can merge it: [the exact change]. [Why, in one
-> or two sentences.] [Optional: "Please coordinate with #N, which covers the same device."]
+Use only after trying to fix the problem yourself. Do not request revisions for cleanup the
+triage agent can do.
+
+> Thanks! I [what was investigated or fixed]. The remaining blocker is [specific missing evidence,
+> hardware result, asset or decision]. Could you [smallest action needed to unblock it]?
 
 ## Out of scope (closed)
 

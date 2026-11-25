@@ -5,6 +5,12 @@ the date.
 
 ## How the repo is run
 
+- Try to fix issues yourself before asking contributors for revisions. Handle routine cleanup and
+  repairable code problems locally, preserving authorship. Ask only for a specific blocker you
+  cannot resolve with the available evidence and tools. (2026-11-04: #269.)
+- Every comment posted on Wes's behalf must carry the exact bot footer specified in
+  [Comment and close](../SKILL.md#6-comment-and-close), including edits to existing bot comments.
+  (2026-11-04.)
 - The agent may merge, fix, push to `main`, comment, and close PRs and issues on its own, within
   [SKILL.md](../SKILL.md). Escalate the items listed there.
 - Merge PRs by merging their commits into `main` (so GitHub marks them merged and keeps authorship),
@@ -46,6 +52,8 @@ the date.
 
 ## Kiosk app
 
+- Keep #274's pause/resume and recovery compatibility fixes; leave the optional native night
+  screen in the contributor's fork. (2026-11-04.)
 - Home app is **opt-in** (`--ez home true` enables a disabled activity-alias). Never add
   `CATEGORY_HOME` to the main launcher filter.
 - The saved URL comes only from `--es url` and only `http`/`https`. Links opened by other apps

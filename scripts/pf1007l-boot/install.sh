@@ -14,6 +14,12 @@
 
 set -euo pipefail
 
+# Git Bash rewrites arguments that look like POSIX paths before calling adb.exe (#185).
+# Exclude frame-side paths; local paths are still converted for adb push.
+case "$(uname -s)" in
+  MINGW*|MSYS*) export MSYS2_ARG_CONV_EXCL="${MSYS2_ARG_CONV_EXCL:+$MSYS2_ARG_CONV_EXCL;}/sbin/;/system/;/data/;/sys/;/proc/" ;;
+esac
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 CONF="$HERE/frame-boot.conf"
@@ -21,7 +27,7 @@ DEV_TMP=/data/local/tmp/frame-boot
 DEV_CONF=/data/local/frame-boot.conf
 HOOK_LINE='exec /system/bin/sh /system/bin/frame-boot-hook.sh'
 OLD_HOOK_LINE='exec /system/bin/sh /system/bin/frame-fixmac.sh'   # from PR #6
-SCRIPTS=(frame-boot-hook.sh frame-fixmac.sh frame-powerfix.sh frame-timesync.sh frame-wifidefer.sh)
+SCRIPTS=(frame-boot-hook.sh frame-fixmac.sh frame-powerfix.sh frame-timesync.sh frame-wifidefer.sh frame-firewall.sh)
 
 EXPECT_DEVICE=astar-m86_8723cs
 EXPECT_RELEASE=6.0.1
@@ -34,6 +40,10 @@ die() { printf '    FAIL: %s\n' "$*" >&2; exit 1; }
 sh_dev() { adb shell "$@" | tr -d '\r'; }
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 dev_sha() { sh_dev "/sbin/busybox sha256sum $1" | cut -d' ' -f1; }
+# A CRLF script passes the SHA-256 checks (both copies have the CRs) but cannot run on the frame
+# and breaks Wi-Fi (#185). Git Bash's grep hides CRs, so count them with tr.
+no_cr() { [ -z "$(tr -cd '\r' < "$1")" ] ||
+  die "$1 has CRLF line endings. Re-check out with LF: git rm -r -q --cached . && git reset --hard"; }
 
 # Run a script on the frame. It is pushed as a file to avoid quoting problems.
 root_script() {
@@ -111,6 +121,18 @@ mac_from_serial() {
 
 cmd_apply() {
   [ -f "$CONF" ] || die "$CONF not found. Copy frame-boot.conf.example to frame-boot.conf and edit it."
+  local f
+  for f in "${SCRIPTS[@]}" wpa_supplicant-wrapper.sh; do no_cr "$HERE/device/$f"; done
+  no_cr "$CONF"
+  # Validate the optional firewall before writing anything; mistakes can remove network ADB.
+  if ( . "$CONF"; [ "${FIREWALL:-0}" = 1 ] ); then
+    ( . "$CONF"; . "$HERE/device/frame-firewall.sh"; fw_config ) ||
+      die "invalid firewall settings: use literal IPv4 DNS addresses and IPv4:port destinations"
+    case "$(adb get-serialno 2>/dev/null)" in
+      *:*) die "install FIREWALL=1 over working USB ADB, not network ADB; verify USB recovery first" ;;
+      unknown|'') die "no selected USB ADB device for firewall installation" ;;
+    esac
+  fi
   cmd_backup
   local tmp mac s
   tmp="$(mktemp -d)"
